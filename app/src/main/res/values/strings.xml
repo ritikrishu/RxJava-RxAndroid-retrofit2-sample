@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Weather App</string>
+    <string name="error_app">Error!!</string>
+    <string name="network_error">Oops! Some network error occured, please try again</string>
+</resources>
