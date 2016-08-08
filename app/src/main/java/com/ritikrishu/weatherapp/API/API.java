@@ -5,6 +5,7 @@ import com.ritikrishu.weatherapp.CurrentWeather;
 import retrofit2.Call;
 import retrofit2.http.GET;
 import retrofit2.http.Path;
+import rx.Observable;
 
 /**
  * Created by ritikrishu on 26/05/16.
@@ -15,7 +16,7 @@ public interface API {
 
     interface GETDATA{
         @GET("{latitude},{longitude}")
-        Call<CurrentWeather> currentWeather(@Path("latitude") String latitude,
-                                            @Path("longitude") String longitude);
+        Observable<CurrentWeather> currentWeather(@Path("latitude") String latitude,
+                                                  @Path("longitude") String longitude);
     }
 }
