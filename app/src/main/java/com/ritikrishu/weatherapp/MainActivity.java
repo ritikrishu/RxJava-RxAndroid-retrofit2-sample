@@ -1,3 +1,7 @@
+/*
+    This is not the best implementation but it is simple and yet Reactive ;)
+ */
+
 package com.ritikrishu.weatherapp;
 
 import android.content.Context;
@@ -16,15 +20,16 @@ import butterknife.BindView;
 import butterknife.ButterKnife;
 import rx.Observable;
 import rx.android.schedulers.AndroidSchedulers;
+import rx.functions.Action0;
 import rx.functions.Action1;
 import rx.functions.Func0;
 import rx.functions.Func1;
 import rx.schedulers.Schedulers;
+import rx.subscriptions.CompositeSubscription;
 
 public class MainActivity extends AppCompatActivity {
 
     public static final String TAG = MainActivity.class.getSimpleName();
-    CurrentWeather mCurrentWeather;
     @BindView(R.id.timeLabel)
     TextView mTimeLabel;
     @BindView(R.id.temperatureLabel)
@@ -42,89 +47,105 @@ public class MainActivity extends AppCompatActivity {
     @BindView(R.id.progressBar)
     ProgressBar mProgressBar;
     private boolean refreshing = true;
+    CompositeSubscription cs;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
-
-//        decideProgress();
-//        retrofitRequest();
-//        mRefreshImageView.setOnClickListener(new View.OnClickListener() {
-//            @Override
-//            public void onClick(View v) {
-//                refreshing = true;
-//                decideProgress();
-//                updateDisplay();
-//                mSummaryLabel.setText("Fetching current data...");
-//                retrofitRequest();
-//            }
-//        });
-        refreshing = true;
-        decideProgress();
         mSummaryLabel.setText("Fetching current data...");
-        //WeatherService weatherService = retrofit.create(WeatherService.class);
-        
-        Service.hitRetro().currentWeather("28.524579", "77.206615")
-        .observeOn(AndroidSchedulers.mainThread())
-                .subscribeOn(Schedulers.io())
-                .flatMap(new Func1<CurrentWeather, Observable<CurrentWeather.currently>>() {
-                    @Override
-                    public Observable<CurrentWeather.currently> call(CurrentWeather currentWeather) {
-                        return Observable.just(currentWeather.getCurrently());
-                    }
-                })
-                .subscribe(new Action1<CurrentWeather.currently>() {
-                    @Override
-                    public void call(CurrentWeather.currently currently) {
-                        refreshing = false;
-                        decideProgress();
-                        updateDisplay(currently);
-                    }
-                });
-
+        cs = new CompositeSubscription();
+        decideProgress();
+        doNetworkOpp();
+        mRefreshImageView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                doNetworkOpp();
+            }
+        });
 
     }
 
-//    private void retrofitRequest() {
-//
-//        final String lat = "28.524579";
-//        final String lon = "77.206615";
-//        Service.hitRetro().currentWeather(lat, lon).enqueue(new retrofit2.Callback<CurrentWeather>() {
-//            @Override
-//            public void onResponse(retrofit2.Call<CurrentWeather> call, retrofit2.Response<CurrentWeather> response) {
-//                refreshing = false;
-//                decideProgress();
-//                try {
-//                    if (response.isSuccessful()) {
-//                        mCurrentWeather = response.body();
-//                        runOnUiThread(new Runnable() {
-//                            @Override
-//                            public void run() {
-//                                updateDisplay();
-//                            }
-//                        });
-//                    } else {
-//                        new AlertDailogueFragment().show(getSupportFragmentManager(), AlertDailogueFragment.TAG);
-//                    }
-//                }
-//
-//                catch (Exception e){
-//
-//                }
-//            }
-//
-//            @Override
-//            public void onFailure(retrofit2.Call<CurrentWeather> call, Throwable t) {
-//                refreshing = false;
-//                decideProgress();
-//                new AlertDailogueFragment().show(getSupportFragmentManager(), AlertDailogueFragment.TAG);
-//            }
-//        });
-//    }
+    @Override
+    protected void onResume() {
+        super.onResume();
+        doNetworkOpp();
+    }
+
+    Observable mainObservable = null;
 
 
+    private void doNetworkOpp() {
+        refreshing = true;
+        decideProgress();
+        if (mainObservable == null) {
+            mainObservable = Observable.defer(new Func0<Observable<CurrentWeather.currently>>() {
+                @Override
+                public Observable<CurrentWeather.currently> call() {
+                    try {
+                        return Observable.just(true)
+                                /*just to emit an stream to start doing work like network connectivity check on a worker thread
+                                                                                                                     **Yes Rx is awesome in handling concurrency :)
+                                */
+                                .filter(new Func1<Boolean, Boolean>() {
+                                    @Override
+                                    public Boolean call(Boolean aBoolean) {
+                                        return isNetworkAvailable();
+                                    }
+                                }).flatMap(new Func1<Boolean, Observable<CurrentWeather.currently>>() {
+                                    @Override
+                                    public Observable<CurrentWeather.currently> call(Boolean aBoolean) {
+                                        return Service.hitRetro().currentWeather("28.524579", "77.206615")
+                                                .flatMap(new Func1<CurrentWeather, Observable<CurrentWeather.currently>>() {
+                                                    @Override
+                                                    public Observable<CurrentWeather.currently> call(CurrentWeather currentWeather) {
+                                                        return Observable.just(currentWeather.getCurrently());
+                                                    }
+                                                });
+                                    }
+                                });
+                    } catch (Exception e) {
+                        return Observable.error(e);
+                    }
+                }
+            })
+                    /*
+                        all filters, flatmaps and other operators processing is done on IO scheduler reducing the work on UI thread
+                        even if we wouldn't have used retrofit2 and done network call in operator function, IO thread would have handled it perfectly
+                     */
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread());//all observers that we pass in .subscribe() function will be executed on Main UI Thread
+        }
+        cs.add(
+                mainObservable.subscribe(new Action1<CurrentWeather.currently>() {
+                                             @Override
+                                             public void call(CurrentWeather.currently currently) {
+                                                 updateDisplay(currently);
+                                             }
+                                         },
+                        new Action1<Throwable>() {
+                            @Override
+                            public void call(Throwable throwable) {
+                                // always override on error, or there might be a scenario where you app will blow up
+                            }
+                        },
+                        new Action0() {
+                            @Override
+                            public void call() {
+                                //hide progress on complete
+                                refreshing = false;
+                                decideProgress();
+                            }
+                        }));
+    }
+
+    //wraped in function to change value of non final variable from anonymous class function
+    private void toggleRefrest() {
+        refreshing = !refreshing;
+    }
+
+    //show hide progressbar
     private void decideProgress() {
         if (refreshing) {
             mProgressBar.setVisibility(View.VISIBLE);
@@ -135,7 +156,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-
+    //update UI
     private void updateDisplay(CurrentWeather.currently currently) {
         mTemperatureLabel.setText(currently.getTemperature() + "");
         mHumidityValue.setText(currently.getHumidity() + "%");
@@ -145,10 +166,17 @@ public class MainActivity extends AppCompatActivity {
         mTimeLabel.setText("At " + currently.getCurrentTime() + " it will be");
     }
 
-
+    //check if device has internet connectivity
     private boolean isNetworkAvailable() {
         ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         NetworkInfo networkInfo = manager.getActiveNetworkInfo();
         return networkInfo != null && networkInfo.isConnected();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        //un subscribe from all subscriptions made
+        cs.unsubscribe();
     }
 }
