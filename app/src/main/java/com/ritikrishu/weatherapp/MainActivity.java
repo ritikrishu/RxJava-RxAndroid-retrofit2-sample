@@ -118,12 +118,13 @@ public class MainActivity extends AppCompatActivity {
                     .observeOn(AndroidSchedulers.mainThread());//all observers that we pass in .subscribe() function will be executed on Main UI Thread
         }
         cs.add(
-                mainObservable.subscribe(new Action1<CurrentWeather.currently>() {
-                                             @Override
-                                             public void call(CurrentWeather.currently currently) {
-                                                 updateDisplay(currently);
-                                             }
-                                         },
+                mainObservable.subscribe(
+                        new Action1<CurrentWeather.currently>() {
+                            @Override
+                            public void call(CurrentWeather.currently currently) {
+                                updateDisplay(currently);
+                            }
+                        },
                         new Action1<Throwable>() {
                             @Override
                             public void call(Throwable throwable) {
