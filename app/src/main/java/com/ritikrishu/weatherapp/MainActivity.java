@@ -56,8 +56,6 @@ public class MainActivity extends AppCompatActivity {
         ButterKnife.bind(this);
         mSummaryLabel.setText("Fetching current data...");
         cs = new CompositeSubscription();
-        decideProgress();
-        doNetworkOpp();
         mRefreshImageView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
